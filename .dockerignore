@@ -1,0 +1,11 @@
+node_modules
+npm-debug.log
+.env
+.git
+.gitignore
+uploads/*
+data/*.db
+README.md
+HOSTING.md
+.cursor
+terminals

@@ -1,0 +1,29 @@
+{
+  "name": "7upload-web",
+  "version": "1.0.0",
+  "description": "Gaming clip upload platform with Discord auth",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "share": "npx localtunnel --port 3000",
+    "build:config": "node scripts/inject-supabase-config.js",
+    "serve": "npx serve public -l 3000"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.7.0",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "cors": "^2.8.5",
+    "express-session": "^1.18.1",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^1.4.5-lts.1",
+    "passport": "^0.7.0",
+    "passport-discord": "^0.1.4",
+    "socket.io": "^4.8.1",
+    "uuid": "^11.0.5"
+  }
+}

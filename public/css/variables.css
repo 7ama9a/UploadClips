@@ -1,0 +1,56 @@
+:root {
+  --blast-blue: #3b82f6;
+  --blast-blue-light: #60a5fa;
+  --blast-blue-dark: #2563eb;
+  --blast-red: #ef4444;
+  --blast-red-light: #f87171;
+  --blast-red-dark: #dc2626;
+  --accent-glow: rgba(59, 130, 246, 0.45);
+  --red-glow: rgba(239, 68, 68, 0.4);
+
+  --bg: #070b14;
+  --bg-mesh-1: rgba(59, 130, 246, 0.08);
+  --bg-mesh-2: rgba(239, 68, 68, 0.06);
+  --bg-card: rgba(15, 23, 42, 0.72);
+  --bg-elevated: rgba(30, 41, 59, 0.65);
+  --bg-glass: rgba(15, 23, 42, 0.55);
+  --text: #f1f5f9;
+  --text-muted: #94a3b8;
+  --border: rgba(148, 163, 184, 0.15);
+  --border-strong: rgba(59, 130, 246, 0.35);
+  --shadow: rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 20px 50px rgba(0, 0, 0, 0.45);
+  --lightgray: #0f172a;
+  --white: #1e293b;
+
+  --nav-height: 76px;
+  --radius: 14px;
+  --radius-sm: 10px;
+  --radius-lg: 20px;
+  --radius-pill: 999px;
+  --font: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", "Courier New", monospace;
+
+  --transition: 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  --btn-shadow: 0 4px 14px rgba(59, 130, 246, 0.25);
+  --btn-shadow-hover: 0 8px 28px rgba(239, 68, 68, 0.35);
+}
+
+[data-theme="light"] {
+  --bg: #f8fafc;
+  --bg-mesh-1: rgba(59, 130, 246, 0.06);
+  --bg-mesh-2: rgba(239, 68, 68, 0.04);
+  --bg-card: rgba(255, 255, 255, 0.85);
+  --bg-elevated: rgba(241, 245, 249, 0.9);
+  --bg-glass: rgba(255, 255, 255, 0.7);
+  --text: #0f172a;
+  --text-muted: #64748b;
+  --border: rgba(15, 23, 42, 0.1);
+  --border-strong: rgba(59, 130, 246, 0.25);
+  --shadow: rgba(15, 23, 42, 0.08);
+  --shadow-lg: 0 20px 50px rgba(15, 23, 42, 0.12);
+  --lightgray: #f1f5f9;
+  --white: #ffffff;
+  --accent-glow: rgba(59, 130, 246, 0.2);
+  --red-glow: rgba(239, 68, 68, 0.2);
+}

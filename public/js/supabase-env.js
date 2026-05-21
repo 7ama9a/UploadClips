@@ -1,0 +1,1 @@
+window.__SUPABASE_CONFIG={"url":"https://ltifpyvngakleyfsghvg.supabase.co/rest/v1/","anonKey":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx0aWZweXZuZ2FrbGV5ZnNnaHZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkzNzE2MzEsImV4cCI6MjA5NDk0NzYzMX0.-G-mJ5QC6FBanSL3EplOzEr1sxz8qlFA00ac5nsQa4o"};

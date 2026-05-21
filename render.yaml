@@ -1,0 +1,28 @@
+# Render.com — free API backend for Netlify frontend
+services:
+  - type: web
+    name: sevenupload-api
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /api/clips
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SERVE_STATIC
+        value: "false"
+      - key: BASE_URL
+        sync: false
+      - key: API_PUBLIC_URL
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: DISCORD_CLIENT_ID
+        sync: false
+      - key: DISCORD_CLIENT_SECRET
+        sync: false
+      - key: DISCORD_CALLBACK_URL
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true

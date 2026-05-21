@@ -1,0 +1,13 @@
+# 7Upload on Supabase — static frontend on Netlify
+
+[build]
+  publish = "public"
+  command = "node scripts/inject-supabase-config.js"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
