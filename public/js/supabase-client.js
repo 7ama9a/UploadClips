@@ -11,7 +11,8 @@ function getSupabase() {
     console.error("7Upload: Supabase JS library not loaded");
     return null;
   }
-  _client = window.supabase.createClient(cfg.url, cfg.anonKey, {
+  const cleanUrl = cfg.url.trim().replace(/\/rest\/v1\/?$/, "").replace(/\/$/, "");
+  _client = window.supabase.createClient(cleanUrl, cfg.anonKey, {
     auth: {
       detectSessionInUrl: true,
       persistSession: true,
