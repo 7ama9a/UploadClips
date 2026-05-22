@@ -1,6 +1,14 @@
+import {
+  getUser,
+  oauthLogin,
+  logout,
+  handleAuthCallback,
+  onAuthChange,
+  AUTH_EVENTS
+} from "https://esm.sh/@netlify/identity";
+
 let currentUser = null;
 let clipsCache = [];
-let realtimeChannel = null;
 
 const pages = {
   home: document.getElementById("page-home"),
@@ -12,6 +20,7 @@ const pages = {
 
 function showToast(msg, isError) {
   const toast = document.getElementById("toast");
+  if (!toast) return;
   toast.textContent = msg;
   toast.className = "toast show" + (isError ? " error" : "");
   setTimeout(() => toast.classList.remove("show"), 3200);
@@ -29,79 +38,29 @@ function escapeHtml(str) {
   return d.innerHTML;
 }
 
-function discordAvatar(user) {
-  const m = user?.user_metadata || {};
-  if (m.avatar_url) return m.avatar_url;
-  return "https://cdn.discordapp.com/embed/avatars/0.png";
-}
-
-async function syncProfile(user) {
-  const sb = getSupabase();
-  if (!sb || !user) return;
-  const m = user.user_metadata || {};
-  const username =
-    m.full_name ||
-    m.name ||
-    m.preferred_username ||
-    m.custom_claims?.global_name ||
-    user.email?.split("@")[0] ||
-    "user";
-  await sb.from("profiles").upsert({
-    id: user.id,
-    username,
-    avatar_url: m.avatar_url || discordAvatar(user),
-  });
-}
-
-function mapClipRow(row, likeCount, liked) {
-  const p = row.profiles || {};
-  return {
-    id: row.id,
-    title: row.title,
-    description: row.description || "",
-    videoUrl: clipVideoUrl(row.storage_path),
-    views: row.views,
-    likes: likeCount,
-    liked,
-    author: {
-      id: row.user_id,
-      username: p.username || "?",
-      avatar: p.avatar_url || "https://cdn.discordapp.com/embed/avatars/0.png",
-    },
-  };
-}
-
-async function attachLikesToClips(clips) {
-  if (!clips?.length) return [];
-  const sb = getSupabase();
-  const ids = clips.map((c) => c.id);
-  const { data: likes } = await sb.from("likes").select("clip_id, user_id").in("clip_id", ids);
-  const countMap = {};
-  const myLikes = new Set();
-  const uid = currentUser?.id;
-  (likes || []).forEach((l) => {
-    countMap[l.clip_id] = (countMap[l.clip_id] || 0) + 1;
-    if (uid && l.user_id === uid) myLikes.add(l.clip_id);
-  });
-  return clips.map((row) =>
-    mapClipRow(row, countMap[row.id] || 0, myLikes.has(row.id))
-  );
+async function apiFetch(path, options = {}) {
+  const headers = { ...(options.headers || {}) };
+  const user = await getUser();
+  const token = user?.token?.access_token;
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  if (options.body && !(options.body instanceof FormData)) {
+    headers["Content-Type"] = headers["Content-Type"] || "application/json";
+  }
+  return fetch(path, { ...options, headers });
 }
 
 async function fetchClipsWithMeta(userIdFilter) {
-  const sb = getSupabase();
-  if (!sb) return [];
-
-  let query = sb
-    .from("clips")
-    .select("*, profiles(id, username, avatar_url)")
-    .order("created_at", { ascending: false });
-
-  if (userIdFilter) query = query.eq("user_id", userIdFilter);
-
-  const { data: clips, error } = await query;
-  if (error) throw error;
-  return attachLikesToClips(clips || []);
+  try {
+    const url = userIdFilter ? `/api/clips?user_id=${userIdFilter}` : "/api/clips";
+    const res = await apiFetch(url);
+    if (!res.ok) throw new Error("Failed to fetch clips");
+    return await res.json();
+  } catch (err) {
+    console.error("Error fetching clips:", err);
+    return [];
+  }
 }
 
 function navigate() {
@@ -170,33 +129,26 @@ function bindLike(root, clip) {
       showToast(t("like.needLogin"), true);
       return;
     }
-    const sb = getSupabase();
     try {
+      const res = await apiFetch(`/api/clips/${clip.id}/like`, { method: "POST" });
+      if (!res.ok) throw new Error("Like failed");
+      const data = await res.json();
+      
+      clip.liked = data.liked;
       if (clip.liked) {
-        const { error } = await sb
-          .from("likes")
-          .delete()
-          .eq("clip_id", clip.id)
-          .eq("user_id", currentUser.id);
-        if (error) throw error;
-        clip.liked = false;
-        clip.likes = Math.max(0, clip.likes - 1);
-      } else {
-        const { error } = await sb.from("likes").insert({
-          clip_id: clip.id,
-          user_id: currentUser.id,
-        });
-        if (error) throw error;
-        clip.liked = true;
         clip.likes += 1;
+      } else {
+        clip.likes = Math.max(0, clip.likes - 1);
       }
+      
       updateLikeUI(root, clip.likes, clip.liked);
       const cached = clipsCache.find((c) => c.id === clip.id);
       if (cached) {
         cached.likes = clip.likes;
         cached.liked = clip.liked;
       }
-    } catch {
+    } catch (err) {
+      console.error(err);
       input.checked = !input.checked;
     }
   });
@@ -234,19 +186,10 @@ async function loadUsers() {
   const grid = document.getElementById("users-grid");
   if (!grid) return;
   grid.innerHTML = "";
-  const sb = getSupabase();
   try {
-    const { data: profiles, error } = await sb
-      .from("profiles")
-      .select("id, username, avatar_url, joined_at")
-      .order("joined_at", { ascending: false });
-    if (error) throw error;
-
-    const { data: clips } = await sb.from("clips").select("user_id");
-    const counts = {};
-    (clips || []).forEach((c) => {
-      counts[c.user_id] = (counts[c.user_id] || 0) + 1;
-    });
+    const res = await apiFetch("/api/users");
+    if (!res.ok) throw new Error("Failed to fetch users");
+    const profiles = await res.json();
 
     if (!profiles?.length) {
       grid.innerHTML = `<p class="empty-state">${t("empty.users")}</p>`;
@@ -260,7 +203,7 @@ async function loadUsers() {
         <img class="avatar" src="${u.avatar_url || "https://cdn.discordapp.com/embed/avatars/0.png"}" alt="" />
         <div class="info">
           <p class="name">${escapeHtml(u.username)}</p>
-          <p class="meta">${counts[u.id] || 0} ${t("profile.clipsCount")}</p>
+          <p class="meta">${u.clips_count || 0} ${t("profile.clipsCount")}</p>
         </div>
       `;
       card.addEventListener("click", () => {
@@ -277,16 +220,13 @@ async function loadUsers() {
 async function loadProfile(userId) {
   const content = document.getElementById("profile-content");
   const grid = document.getElementById("profile-clips");
+  if (!content || !grid) return;
   content.innerHTML = "";
   grid.innerHTML = "";
-  const sb = getSupabase();
   try {
-    const { data: profile, error } = await sb
-      .from("profiles")
-      .select("*")
-      .eq("id", userId)
-      .single();
-    if (error) throw error;
+    const res = await apiFetch(`/api/users/${userId}`);
+    if (!res.ok) throw new Error("Failed to fetch profile");
+    const profile = await res.json();
 
     content.innerHTML = `
       <div class="profile-header">
@@ -319,10 +259,11 @@ async function openClipModal(clipId) {
   const desc = document.getElementById("modal-desc");
   const views = document.getElementById("modal-views");
   const likeSlot = document.getElementById("modal-like");
-  const sb = getSupabase();
+  if (!overlay || !video || !title || !desc || !views || !likeSlot) return;
 
   try {
-    await sb.rpc("increment_clip_views", { clip_uuid: clipId });
+    const viewRes = await apiFetch(`/api/clips/${clipId}/view`, { method: "POST" });
+    const viewData = await viewRes.json();
 
     let clip = clipsCache.find((c) => c.id === clipId);
     if (!clip) {
@@ -331,7 +272,7 @@ async function openClipModal(clipId) {
     }
     if (!clip) throw new Error("not found");
 
-    clip.views += 1;
+    clip.views = viewData.views || (clip.views + 1);
     title.textContent = clip.title;
     desc.textContent = clip.description || "";
     video.src = clip.videoUrl;
@@ -348,6 +289,7 @@ async function openClipModal(clipId) {
 
 function renderAuth(user) {
   const slot = document.getElementById("auth-slot");
+  if (!slot) return;
   if (!user) {
     slot.innerHTML = `<button type="button" class="discord-login-btn" id="login-btn">${t("auth.login")}</button>`;
     document.getElementById("login-btn")?.addEventListener("click", loginWithDiscord);
@@ -361,90 +303,43 @@ function renderAuth(user) {
     <button type="button" class="btn-ghost" id="logout-btn">${t("auth.logout")}</button>
   `;
   document.getElementById("logout-btn")?.addEventListener("click", async () => {
-    const sb = getSupabase();
-    await sb.auth.signOut();
+    await logout();
     currentUser = null;
     renderAuth(null);
     showToast(t("auth.logout"));
+    navigate();
   });
 }
 
 async function loginWithDiscord() {
-  const sb = getSupabase();
-  if (!sb) {
-    showToast("Supabase not configured", true);
-    return;
+  try {
+    oauthLogin("discord");
+  } catch (err) {
+    console.error("Login redirect failed:", err);
+    showToast(t("login.fail"), true);
   }
-  const { error } = await sb.auth.signInWithOAuth({
-    provider: "discord",
-    options: { redirectTo: window.location.origin + window.location.pathname },
-  });
-  if (error) showToast(t("login.fail"), true);
 }
 
 async function fetchMe() {
-  const sb = getSupabase();
-  if (!sb) {
-    renderAuth(null);
-    return;
-  }
-  const {
-    data: { session },
-  } = await sb.auth.getSession();
-  if (!session?.user) {
+  try {
+    const res = await apiFetch("/api/me");
+    if (!res.ok) throw new Error();
+    const data = await res.json();
+    if (data && data.id) {
+      currentUser = {
+        id: data.id,
+        username: data.username,
+        avatar: data.avatar || "https://cdn.discordapp.com/embed/avatars/0.png",
+      };
+      renderAuth(currentUser);
+    } else {
+      currentUser = null;
+      renderAuth(null);
+    }
+  } catch {
     currentUser = null;
     renderAuth(null);
-    return;
   }
-  await syncProfile(session.user);
-  const { data: profile } = await sb
-    .from("profiles")
-    .select("username, avatar_url")
-    .eq("id", session.user.id)
-    .single();
-
-  currentUser = {
-    id: session.user.id,
-    username: profile?.username || session.user.email || "user",
-    avatar: profile?.avatar_url || discordAvatar(session.user),
-  };
-  renderAuth(currentUser);
-}
-
-function initRealtime() {
-  const sb = getSupabase();
-  if (!sb || realtimeChannel) return;
-
-  realtimeChannel = sb
-    .channel("7upload")
-    .on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "clips" },
-      () => {
-        const hash = location.hash.slice(1).split("/")[0] || "home";
-        if (hash === "clips") loadClips("clips-grid");
-        if (hash === "home") loadClips("home-clips", 6);
-        const profileId = location.hash.match(/profile\/([^/]+)/)?.[1];
-        if (profileId) loadProfile(profileId);
-      }
-    )
-    .on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "likes" },
-      () => {
-        const hash = location.hash.slice(1).split("/")[0] || "home";
-        if (hash === "clips") loadClips("clips-grid");
-        if (hash === "home") loadClips("home-clips", 6);
-      }
-    )
-    .on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "profiles" },
-      () => {
-        if (location.hash.includes("users")) loadUsers();
-      }
-    )
-    .subscribe();
 }
 
 /* Upload */
@@ -470,7 +365,7 @@ fileInput?.addEventListener("change", () => {
 
 function setFile(file) {
   selectedFile = file;
-  fileNameEl.textContent = file.name;
+  if (fileNameEl) fileNameEl.textContent = file.name;
 }
 
 document.getElementById("upload-btn")?.addEventListener("click", async () => {
@@ -484,45 +379,31 @@ document.getElementById("upload-btn")?.addEventListener("click", async () => {
     return;
   }
 
-  const sb = getSupabase();
   const btn = document.getElementById("upload-btn");
-  btn.disabled = true;
+  if (btn) btn.disabled = true;
 
   try {
-    const ext = selectedFile.name.includes(".")
-      ? selectedFile.name.slice(selectedFile.name.lastIndexOf("."))
-      : ".mp4";
-    const storagePath = `${currentUser.id}/${Date.now()}${ext}`;
-
-    const { error: upErr } = await sb.storage
-      .from("clips")
-      .upload(storagePath, selectedFile, {
-        cacheControl: "3600",
-        upsert: false,
-        contentType: selectedFile.type || "video/mp4",
-      });
-    if (upErr) throw upErr;
-
     const title =
       document.getElementById("clip-title").value.trim() ||
       selectedFile.name ||
       "Untitled";
     const description = document.getElementById("clip-desc").value.trim();
 
-    const { error: dbErr } = await sb.from("clips").insert({
-      user_id: currentUser.id,
-      title: title.slice(0, 120),
-      description: description.slice(0, 500),
-      storage_path: storagePath,
-      original_name: selectedFile.name,
-      mime_type: selectedFile.type,
-      file_size: selectedFile.size,
+    const formData = new FormData();
+    formData.append("video", selectedFile);
+    formData.append("title", title);
+    formData.append("description", description);
+
+    const res = await apiFetch("/api/clips", {
+      method: "POST",
+      body: formData,
     });
-    if (dbErr) throw dbErr;
+
+    if (!res.ok) throw new Error("Upload request failed");
 
     showToast(t("upload.success"));
     selectedFile = null;
-    fileNameEl.textContent = "";
+    if (fileNameEl) fileNameEl.textContent = "";
     document.getElementById("clip-title").value = "";
     document.getElementById("clip-desc").value = "";
     location.hash = "clips";
@@ -530,7 +411,7 @@ document.getElementById("upload-btn")?.addEventListener("click", async () => {
     console.error(err);
     showToast(t("upload.fail"), true);
   } finally {
-    btn.disabled = false;
+    if (btn) btn.disabled = false;
   }
 });
 
@@ -540,39 +421,48 @@ document.getElementById("clip-modal")?.addEventListener("click", (e) => {
 });
 
 function closeModal() {
-  document.getElementById("clip-modal").classList.remove("open");
+  const modal = document.getElementById("clip-modal");
+  if (modal) modal.classList.remove("open");
   const v = document.getElementById("modal-video");
-  v.pause();
-  v.removeAttribute("src");
+  if (v) {
+    v.pause();
+    v.removeAttribute("src");
+  }
 }
 
 document.getElementById("menu-toggle")?.addEventListener("click", () => {
-  document.getElementById("nav-links").classList.toggle("mobile-open");
+  document.getElementById("nav-links")?.classList.toggle("mobile-open");
 });
 
 window.addEventListener("hashchange", navigate);
 
 async function boot() {
-  const sb = getSupabase();
-  if (!sb) {
-    showToast("Add Supabase keys — see SUPABASE-HOSTING.md", true);
-    return;
-  }
-
-  sb.auth.onAuthStateChange(async (event, session) => {
-    if (event === "SIGNED_IN" && session) {
-      const loader = document.getElementById("login-loader");
-      loader?.classList.add("show");
-      await syncProfile(session.user);
-      setTimeout(() => loader?.classList.remove("show"), 1200);
+  try {
+    // 1. Process potential Netlify Identity callbacks (hash URLs for OAuth redirect, etc.)
+    const result = await handleAuthCallback();
+    if (result) {
       showToast(t("login.ok"));
     }
-    await fetchMe();
+  } catch (err) {
+    console.error("Auth callback error:", err);
+    showToast(t("login.fail"), true);
+  }
+
+  // 2. Fetch authenticated user profile and render navigation/auth UI
+  await fetchMe();
+
+  // 3. Listen for auth changes to re-fetch/render on login/logout
+  onAuthChange(async (event, user) => {
+    if (event === AUTH_EVENTS.LOGIN || event === AUTH_EVENTS.TOKEN_REFRESH) {
+      await fetchMe();
+    } else if (event === AUTH_EVENTS.LOGOUT) {
+      currentUser = null;
+      renderAuth(null);
+    }
+    navigate();
   });
 
-  initRealtime();
   navigate();
-  await fetchMe();
 }
 
 if (document.readyState === "loading") {
