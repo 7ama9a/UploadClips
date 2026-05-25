@@ -23,6 +23,13 @@ const UPLOADS_DIR =
   process.env.UPLOADS_DIR || path.join(__dirname, "uploads");
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 
+const { createClient } = require('@supabase/supabase-js')
+
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_ANON_KEY
+);
+
 [UPLOADS_DIR, DATA_DIR].forEach((dir) => {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
